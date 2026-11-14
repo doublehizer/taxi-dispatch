@@ -43,7 +43,11 @@ term_run 4 "docker compose ps --format 'table {{.Service}}\t{{.Image}}\t{{.Statu
 term_shot "$OUT/compose-ps.png"
 term_close
 
-python demo/web_shots.py panel http://127.0.0.1 "$OUT" "$ADMIN_PASSWORD"
+python demo/web_shots.py panel http://127.0.0.1 "$OUT" "$ADMIN_PASSWORD" || {
+    echo "!! Снимки панели не получены"
+    curl -sS -o /dev/null -w "GET / -> %{http_code}\n" http://127.0.0.1/ || true
+    docker compose logs --tail 40 traefik || true
+}
 docker compose down -v
 
 # ---------- 2. Кластер Docker Swarm ----------
@@ -83,7 +87,7 @@ term_close
 ELAPSED=$(( $(date +%s) - STARTED ))
 if (( ELAPSED < 420 )); then sleep $(( 420 - ELAPSED )); fi
 step "Grafana"
-python demo/web_shots.py grafana http://127.0.0.1 "$OUT"
+python demo/web_shots.py grafana http://127.0.0.1 "$OUT" || echo "!! Снимок Grafana не получен"
 mkdir -p "$OUT/cluster"
 python demo/web_shots.py panel http://127.0.0.1 "$OUT/cluster" "$ADMIN_PASSWORD" || true
 

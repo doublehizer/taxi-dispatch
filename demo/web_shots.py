@@ -27,9 +27,23 @@ async def new_page(browser, width=1440, height=900):
     return await context.new_page()
 
 
+async def open_panel(page, base_url: str, out: Path) -> None:
+    """Шлюз может подхватить маршруты не сразу: страница перезагружается до появления формы входа."""
+    for _ in range(24):
+        try:
+            await page.goto(base_url, wait_until="networkidle", timeout=20000)
+            await page.wait_for_selector("#login-username", timeout=5000)
+            return
+        except Exception:  # noqa: BLE001
+            await page.wait_for_timeout(5000)
+    await page.screenshot(path=str(out / "debug-panel.png"))
+    (out / "debug-panel.html").write_text(await page.content(), encoding="utf-8")
+    raise RuntimeError("Форма входа не появилась")
+
+
 async def panel(browser, base_url: str, out: Path, password: str) -> None:
     page = await new_page(browser)
-    await page.goto(base_url, wait_until="networkidle")
+    await open_panel(page, base_url, out)
     await page.fill("#login-username", "admin")
     await page.fill("#login-password", "wrong-password")
     await page.click("#login-form button[type=submit]")

@@ -47,6 +47,21 @@ create_secret admin_password "${ADMIN_PASSWORD:-$(openssl rand -hex 6)}" "$([[ -
 create_secret dispatcher_password "${DISPATCHER_PASSWORD:-$(openssl rand -hex 6)}" "$([[ -z "${DISPATCHER_PASSWORD:-}" ]] && echo 1 || echo 0)"
 
 echo ">> Развёртывание стека $STACK (образы $REGISTRY, тег $TAG)"
-docker stack deploy --with-registry-auth --prune --detach=false -c docker-stack.yml "$STACK"
+docker stack deploy --with-registry-auth --prune --detach=true -c docker-stack.yml "$STACK"
 
+# Ожидание, пока у всех сервисов запустится нужное число реплик
+TIMEOUT="${DEPLOY_TIMEOUT:-420}"
+for ((t = 0; t < TIMEOUT; t += 10)); do
+    if docker stack services "$STACK" --format '{{.Replicas}}' \
+        | awk -F'[/ ]' '$1 != $2 { bad = 1 } END { exit bad }'; then
+        echo ">> Все сервисы запущены за $t с"
+        docker stack services "$STACK"
+        exit 0
+    fi
+    sleep 10
+done
+echo ">> Сервисы не запустились за $TIMEOUT с"
 docker stack services "$STACK"
+docker stack ps "$STACK" --no-trunc --filter desired-state=running \
+    --format '{{.Name}}\t{{.Node}}\t{{.CurrentState}}\t{{.Error}}'
+exit 1
