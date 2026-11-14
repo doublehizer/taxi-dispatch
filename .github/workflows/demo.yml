@@ -1,0 +1,59 @@
+name: Демонстрация
+
+# Воспроизводимый демонстрационный прогон: локальный запуск через
+# Docker Compose и кластер Docker Swarm из трёх узлов с проверкой
+# изоляции сетей, масштабирования и отказа узла. Снимки окон терминала
+# и веб-интерфейсов сохраняются как артефакт demo-screens.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [demo]
+
+jobs:
+  demo:
+    name: Демонстрационный прогон
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установка инструментов
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb xterm xdotool imagemagick fonts-dejavu-core
+          pip install -q playwright==1.49.1
+          playwright install --with-deps chromium
+          sudo modprobe -a overlay br_netfilter ip_vs vxlan || true
+
+      - name: Прогон
+        run: xvfb-run -a -s '-screen 0 2400x1700x24' demo/run-demo.sh
+
+      - name: Снимок страницы последнего запуска CI/CD
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID="$(gh run list --workflow ci-cd.yml --branch main --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId')"
+          if [ -n "$RUN_ID" ]; then
+            python demo/web_shots.py page \
+              "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" demo/out/actions.png
+          fi
+
+      - name: Диагностика при ошибке
+        if: failure()
+        run: |
+          docker ps -a | head -40
+          docker exec manager docker stack ps taxi --no-trunc | head -80 || true
+          docker exec manager docker service logs --tail 40 taxi_traefik || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-screens
+          path: demo/out/

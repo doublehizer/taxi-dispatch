@@ -1,0 +1,10 @@
+#cloud-config
+# Начальная настройка узла кластера: установка Docker Engine
+package_update: true
+packages:
+  - docker.io
+  - git
+  - curl
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker ubuntu

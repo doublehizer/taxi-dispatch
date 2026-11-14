@@ -1,0 +1,48 @@
+# Вариант для Docker Swarm: tasks.<сервис> возвращает адреса всех задач,
+# а не виртуальный IP балансировщика.
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  # DNS-обнаружение: имя сервиса разрешается во все его реплики
+  - job_name: order-service
+    dns_sd_configs:
+      - names: ["tasks.order-service"]
+        type: A
+        port: 8000
+
+  - job_name: driver-service
+    dns_sd_configs:
+      - names: ["tasks.driver-service"]
+        type: A
+        port: 8000
+
+  - job_name: dispatch-service
+    dns_sd_configs:
+      - names: ["tasks.dispatch-service"]
+        type: A
+        port: 8000
+
+  - job_name: auth-service
+    dns_sd_configs:
+      - names: ["tasks.auth-service"]
+        type: A
+        port: 8000
+
+  - job_name: rabbitmq
+    metrics_path: /metrics/per-object
+    dns_sd_configs:
+      - names: ["tasks.rabbitmq"]
+        type: A
+        port: 15692
+
+  - job_name: traefik
+    dns_sd_configs:
+      - names: ["tasks.traefik"]
+        type: A
+        port: 8080
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

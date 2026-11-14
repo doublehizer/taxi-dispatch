@@ -1,0 +1,4 @@
+asyncpg==0.30.0
+aio-pika==9.5.4
+redis==5.2.1
+prometheus-client==0.21.1

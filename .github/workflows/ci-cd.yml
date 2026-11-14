@@ -1,0 +1,126 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1. Непрерывная интеграция: статический анализ и тесты
+  test:
+    name: Проверка кода и тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установка зависимостей
+        run: pip install -r requirements-dev.txt
+
+      - name: Статический анализ (ruff)
+        run: ruff check .
+
+      - name: Модульные тесты (pytest)
+        run: pytest -v
+
+      - name: Проверка docker-compose.yml
+        run: docker compose config -q
+
+  # 2. Сборка образов и публикация в GitHub Container Registry
+  build:
+    name: Сборка ${{ matrix.service }}
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [auth-service, order-service, driver-service, dispatch-service, simulator, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Имя реестра в нижнем регистре
+        run: echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/taxi-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/taxi-${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # 3. Непрерывное развёртывание.
+  # В облачной среде выполнения создаётся кластер Docker Swarm из трёх узлов,
+  # в него разворачивается стек из только что опубликованных образов,
+  # после чего система проверяется через шлюз. Для постоянного стенда
+  # то же задание запускается на self-hosted runner управляющего узла
+  # (см. README.md).
+  deploy:
+    name: Развёртывание в кластер Docker Swarm
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'admin12345' }}
+      DISPATCHER_PASSWORD: ${{ secrets.DISPATCHER_PASSWORD || 'dispatcher123' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Создание кластера из трёх узлов
+        run: |
+          sudo modprobe -a overlay br_netfilter ip_vs vxlan || true
+          infra/swarm/create-cluster.sh
+
+      - name: Вход в реестр образов на управляющем узле
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker exec -i manager \
+            docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Развёртывание стека
+        run: |
+          docker exec \
+            -e REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" -e TAG="${{ github.sha }}" \
+            -e ADMIN_PASSWORD -e DISPATCHER_PASSWORD \
+            -w /taxi-dispatch/infra/swarm manager ./deploy.sh
+
+      - name: Состояние кластера
+        run: |
+          docker exec manager docker node ls
+          docker exec manager docker stack services taxi
+
+      - name: Проверка работоспособности через шлюз
+        run: infra/swarm/smoke-test.sh
+
+      - name: Диагностика при ошибке
+        if: failure()
+        run: |
+          docker exec manager docker stack ps taxi --no-trunc | head -80
+          for s in auth-service order-service dispatch-service traefik; do
+            docker exec manager docker service logs --tail 30 "taxi_$s" || true
+          done

@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  # DNS-обнаружение: имя сервиса разрешается во все его реплики
+  - job_name: order-service
+    dns_sd_configs:
+      - names: ["order-service"]
+        type: A
+        port: 8000
+
+  - job_name: driver-service
+    dns_sd_configs:
+      - names: ["driver-service"]
+        type: A
+        port: 8000
+
+  - job_name: dispatch-service
+    dns_sd_configs:
+      - names: ["dispatch-service"]
+        type: A
+        port: 8000
+
+  - job_name: auth-service
+    dns_sd_configs:
+      - names: ["auth-service"]
+        type: A
+        port: 8000
+
+  - job_name: rabbitmq
+    metrics_path: /metrics/per-object
+    dns_sd_configs:
+      - names: ["rabbitmq"]
+        type: A
+        port: 15692
+
+  - job_name: traefik
+    dns_sd_configs:
+      - names: ["traefik"]
+        type: A
+        port: 8080
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

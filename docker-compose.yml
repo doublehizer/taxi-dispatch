@@ -1,0 +1,286 @@
+# Локальный запуск системы на одной машине (Docker Desktop на macOS / Windows):
+#   docker compose up -d --build
+# Панель диспетчера: http://localhost        (admin / admin12345, dispatcher / dispatcher123)
+# Grafana:           http://localhost/grafana   (admin / admin)
+# Traefik:           http://localhost:8080
+# RabbitMQ:          http://localhost:15672     (taxi / taxi)
+# Prometheus:        http://localhost:9090
+
+name: taxi
+
+x-app-env: &app-env
+  POSTGRES_HOST: postgres
+  POSTGRES_DB: taxi
+  POSTGRES_USER: taxi
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taxi}
+  REDIS_HOST: redis
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_USER: taxi
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-taxi}
+  DISPATCH_RETRY_DELAY_MS: "5000"
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ---------- Точка входа ----------
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --metrics.prometheus=true
+      - --accesslog=true
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [edge, backend]
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    build:
+      context: .
+      dockerfile: services/web/Dockerfile
+    image: taxi-web:local
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=taxi_edge
+      - traefik.http.routers.web.rule=PathPrefix(`/`)
+      - traefik.http.routers.web.priority=1
+      - traefik.http.routers.web.entrypoints=web
+      - traefik.http.services.web.loadbalancer.server.port=80
+    networks: [edge]
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------- Прикладные сервисы ----------
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    image: taxi-auth-service:local
+    environment:
+      <<: *app-env
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
+      DISPATCHER_PASSWORD: ${DISPATCHER_PASSWORD:-dispatcher123}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=taxi_backend
+      # Открытый маршрут: вход и управление пользователями (проверка внутри сервиса)
+      - traefik.http.routers.auth.rule=PathPrefix(`/api/auth`)
+      - traefik.http.routers.auth.entrypoints=web
+      - traefik.http.routers.auth.middlewares=strip-api
+      - traefik.http.services.auth.loadbalancer.server.port=8000
+      # Middleware проверки доступа для остальных API
+      - traefik.http.middlewares.auth-check.forwardauth.address=http://auth-service:8000/auth/verify
+      - traefik.http.middlewares.auth-check.forwardauth.authResponseHeaders=X-User,X-Role
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend, data]
+    restart: unless-stopped
+    logging: *logging
+
+  order-service:
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    image: taxi-order-service:local
+    environment:
+      <<: *app-env
+      DRIVER_SERVICE_URL: http://driver-service:8000
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=taxi_backend
+      - traefik.http.routers.orders.rule=PathPrefix(`/api/orders`)
+      - traefik.http.routers.orders.entrypoints=web
+      - traefik.http.routers.orders.middlewares=auth-check,strip-api
+      - traefik.http.middlewares.strip-api.stripprefix.prefixes=/api
+      - traefik.http.services.orders.loadbalancer.server.port=8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks: [backend, data]
+    restart: unless-stopped
+    logging: *logging
+
+  driver-service:
+    build:
+      context: .
+      dockerfile: services/driver-service/Dockerfile
+    image: taxi-driver-service:local
+    environment:
+      <<: *app-env
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=taxi_backend
+      - traefik.http.routers.drivers.rule=PathPrefix(`/api/drivers`)
+      - traefik.http.routers.drivers.entrypoints=web
+      - traefik.http.routers.drivers.middlewares=auth-check,strip-api
+      - traefik.http.services.drivers.loadbalancer.server.port=8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [backend, data]
+    restart: unless-stopped
+    logging: *logging
+
+  dispatch-service:
+    build:
+      context: .
+      dockerfile: services/dispatch-service/Dockerfile
+    image: taxi-dispatch-service:local
+    environment:
+      <<: *app-env
+      DISPATCH_MAX_ATTEMPTS: "6"
+      DISPATCH_PREFETCH: "5"
+    deploy:
+      replicas: 2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks: [backend, data]
+    restart: unless-stopped
+    logging: *logging
+
+  simulator:
+    build:
+      context: .
+      dockerfile: services/simulator/Dockerfile
+    image: taxi-simulator:local
+    environment:
+      ORDER_API_URL: http://order-service:8000
+      DRIVER_API_URL: http://driver-service:8000
+      SIM_DRIVERS: "30"
+      SIM_ORDER_INTERVAL: "3"
+    depends_on: [order-service, driver-service]
+    networks: [backend]
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------- Хранилища ----------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: taxi
+      POSTGRES_USER: taxi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taxi}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxi -d taxi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [data]
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [data]
+    restart: unless-stopped
+    logging: *logging
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: taxi
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-taxi}
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+      - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend, data]
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------- Мониторинг ----------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [backend]
+    restart: unless-stopped
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/taxi.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=taxi_edge
+      - traefik.http.routers.grafana.rule=PathPrefix(`/grafana`)
+      - traefik.http.routers.grafana.entrypoints=web
+      - traefik.http.services.grafana.loadbalancer.server.port=3000
+    depends_on: [prometheus]
+    networks: [edge, backend]
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  # Внешний контур: точка входа и веб-интерфейсы
+  edge:
+    name: taxi_edge
+  # Прикладной контур: API, брокер сообщений, мониторинг
+  backend:
+    name: taxi_backend
+  # Контур данных: изолирован от внешнего мира
+  data:
+    name: taxi_data
+    internal: true
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitdata:
+  promdata:
+  grafanadata:
