@@ -164,7 +164,7 @@ header nav { display: flex; gap: 4px; height: 100%; }
 
 main {
     display: grid;
-    grid-template-columns: minmax(0, 11fr) minmax(0, 10fr);
+    grid-template-columns: minmax(0, 10fr) minmax(0, 11fr);
     gap: 16px;
     padding: 0 24px 24px;
 }
