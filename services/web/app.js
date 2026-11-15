@@ -13,8 +13,10 @@ const STATUS_RU = {
 };
 const DRIVER_STATUS_RU = { free: "свободен", busy: "занят", offline: "не на линии" };
 const TARIFF_RU = { economy: "Эконом", comfort: "Комфорт", business: "Бизнес" };
-const DRIVER_COLOR = { free: "#22c55e", busy: "#e10600", offline: "#6b7280" };
-const ORDER_COLOR = "#facc15";
+const DRIVER_COLOR = { free: "#4fb37a", busy: "#d6302a", offline: "#5d6169" };
+const ORDER_COLOR = "#e8b84a";
+const fmt = (value, digits) => value.toLocaleString("ru-RU", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+let driverIndex = new Map();
 
 let session = loadSession();
 let map = null;
@@ -191,14 +193,16 @@ async function onMapClick(e) {
 document.getElementById("reset").addEventListener("click", resetDraft);
 
 function renderMapDrivers(drivers) {
+    driverIndex = new Map(drivers.map((d) => [d.id, d]));
     driverLayer.clearLayers();
     for (const d of drivers) {
         L.circleMarker([d.lat, d.lon], {
             radius: 6,
             color: DRIVER_COLOR[d.status],
             fillColor: DRIVER_COLOR[d.status],
-            fillOpacity: 0.85,
-            weight: 1,
+            fillOpacity: 0.9,
+            weight: 2,
+            opacity: 0.35,
         })
             .bindTooltip(`${esc(d.name)}<br>${esc(d.car)}, ${esc(d.plate)}<br>` +
                 `${TARIFF_RU[d.car_class]} · ${DRIVER_STATUS_RU[d.status]}`)
@@ -224,14 +228,18 @@ function renderOrders(orders) {
                 .addTo(orderLayer);
         }
         const tr = document.createElement("tr");
+        const driver = driverIndex.get(o.driver_id);
+        const driverCell = driver
+            ? `<span title="${esc(driver.plate)}">${esc(shortName(driver.name))}</span>`
+            : `<span class="muted">${o.driver_id ? "№ " + o.driver_id : "нет"}</span>`;
         tr.innerHTML = `
-            <td>${o.id}</td>
+            <td class="pos num">${o.id}</td>
             <td>${esc(o.passenger_name)}</td>
             <td>${TARIFF_RU[o.tariff]}</td>
-            <td>${o.distance_km}</td>
-            <td>${o.price} ₽</td>
-            <td><span class="badge ${o.status}">${STATUS_RU[o.status]}</span></td>
-            <td>${o.driver_id ?? "—"}</td>
+            <td class="num">${fmt(Number(o.distance_km), 1)}</td>
+            <td class="num">${Number(o.price).toLocaleString("ru-RU")} ₽</td>
+            <td><span class="status ${o.status}"><i class="dot ${o.status}"></i>${STATUS_RU[o.status]}</span></td>
+            <td>${driverCell}</td>
             <td>${active ? `<button data-cancel="${o.id}">Отмена</button>` : ""}</td>`;
         tbody.appendChild(tr);
     }
@@ -248,14 +256,20 @@ document.getElementById("orders").addEventListener("click", async (e) => {
     refresh();
 });
 
+// «Иванов Пётр Сергеевич» -> «Иванов П.»
+function shortName(name) {
+    const parts = String(name).trim().split(/\s+/);
+    return parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0];
+}
+
 function renderStats(stats) {
     for (const key of ["searching", "assigned", "in_progress", "completed", "no_drivers"]) {
         document.getElementById("s-" + key).textContent = stats.by_status[key] ?? 0;
     }
     document.getElementById("s-assign").textContent =
-        stats.avg_assign_sec != null ? stats.avg_assign_sec.toFixed(1) + " с" : "—";
+        stats.avg_assign_sec != null ? fmt(stats.avg_assign_sec, 1) + " с" : "нет данных";
     document.getElementById("s-pickup").textContent =
-        stats.avg_pickup_km != null ? stats.avg_pickup_km.toFixed(2) + " км" : "—";
+        stats.avg_pickup_km != null ? fmt(stats.avg_pickup_km, 2) + " км" : "нет данных";
     document.getElementById("s-revenue").textContent =
         Math.round(stats.revenue).toLocaleString("ru-RU") + " ₽";
 }
@@ -273,6 +287,9 @@ function fillDriverForm(driver) {
     document.getElementById("d-plate").value = driver ? driver.plate : "";
     document.getElementById("d-class").value = driver ? driver.car_class : "economy";
     document.getElementById("driver-error").textContent = "";
+    for (const row of document.querySelectorAll("#drivers tr")) {
+        row.classList.toggle("editing", Boolean(driver) && row.dataset.id === String(driver.id));
+    }
 }
 
 driverForm.addEventListener("submit", async (e) => {
@@ -310,13 +327,15 @@ function renderDriverTable(drivers) {
     tbody.innerHTML = "";
     for (const d of drivers) {
         const tr = document.createElement("tr");
+        tr.dataset.id = d.id;
+        tr.classList.toggle("editing", document.getElementById("d-id").value === String(d.id));
         tr.innerHTML = `
-            <td>${d.id}</td>
+            <td class="pos num">${d.id}</td>
             <td>${esc(d.name)}</td>
             <td>${esc(d.car)}</td>
-            <td>${esc(d.plate)}</td>
+            <td><span class="plate">${esc(d.plate)}</span></td>
             <td>${TARIFF_RU[d.car_class]}</td>
-            <td>${DRIVER_STATUS_RU[d.status]}</td>
+            <td><span class="status"><i class="dot ${d.status}"></i>${DRIVER_STATUS_RU[d.status]}</span></td>
             <td>
                 <button data-edit="${d.id}">Изменить</button>
                 <button data-delete="${d.id}">Удалить</button>

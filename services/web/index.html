@@ -12,11 +12,11 @@
 <!-- Экран входа -->
 <div id="login-screen" class="login-screen">
     <form id="login-form" class="login-box">
-        <h1>Служба такси</h1>
-        <p>Вход в панель управления</p>
+        <h1><span class="brand-mark" aria-hidden="true"></span>Служба такси</h1>
+        <p>Вход в панель диспетчера</p>
         <label>Логин <input id="login-username" autocomplete="username" required></label>
         <label>Пароль <input id="login-password" type="password" autocomplete="current-password" required></label>
-        <button type="submit">Войти</button>
+        <button type="submit" class="primary">Войти</button>
         <div id="login-error" class="error"></div>
     </form>
 </div>
@@ -24,35 +24,35 @@
 <!-- Основное приложение -->
 <div id="app" hidden>
     <header>
-        <h1>Панель диспетчера</h1>
+        <h1><span class="brand-mark" aria-hidden="true"></span>Диспетчерская такси</h1>
         <nav>
             <button class="tab active" data-tab="orders-tab">Заказы</button>
             <button class="tab" data-tab="drivers-tab" data-admin>Водители</button>
         </nav>
         <div class="user">
-            <span id="conn" class="conn">подключение…</span>
+            <span id="conn" class="conn">подключение</span>
             <span id="user-name"></span>
             <button id="logout">Выйти</button>
         </div>
     </header>
 
     <section id="orders-tab" class="tab-page">
-        <section class="cards">
-            <div class="card"><span>Ищут водителя</span><b id="s-searching">0</b></div>
-            <div class="card"><span>Назначено</span><b id="s-assigned">0</b></div>
-            <div class="card"><span>В пути</span><b id="s-in_progress">0</b></div>
-            <div class="card"><span>Выполнено</span><b id="s-completed">0</b></div>
-            <div class="card"><span>Нет водителей</span><b id="s-no_drivers">0</b></div>
-            <div class="card"><span>Среднее время назначения</span><b id="s-assign">—</b></div>
-            <div class="card"><span>Средняя подача</span><b id="s-pickup">—</b></div>
-            <div class="card"><span>Выручка</span><b id="s-revenue">0 ₽</b></div>
+        <section class="timing">
+            <div class="lead"><span>В пути</span><b id="s-in_progress">0</b></div>
+            <div><span>Ищут водителя</span><b id="s-searching">0</b></div>
+            <div><span>Назначено</span><b id="s-assigned">0</b></div>
+            <div><span>Выполнено</span><b id="s-completed">0</b></div>
+            <div><span>Нет водителей</span><b id="s-no_drivers">0</b></div>
+            <div><span>Среднее назначение</span><b id="s-assign">0,0 с</b></div>
+            <div><span>Средняя подача</span><b id="s-pickup">0,00 км</b></div>
+            <div><span>Выручка</span><b id="s-revenue">0 ₽</b></div>
         </section>
 
         <main>
             <div class="map-wrap">
                 <div id="map"></div>
                 <div class="new-order">
-                    <b>Новый заказ:</b>
+                    <b>Новый заказ</b>
                     <span id="hint">кликните на карте точку подачи</span>
                     <select id="tariff">
                         <option value="economy">Эконом</option>
@@ -62,18 +62,18 @@
                     <button id="reset">Сбросить</button>
                 </div>
                 <div class="legend">
-                    <i class="dot free"></i>свободен
-                    <i class="dot busy"></i>занят
-                    <i class="dot offline"></i>не на линии
-                    <i class="dot order"></i>точка подачи
+                    <span><i class="dot free"></i>свободен</span>
+                    <span><i class="dot busy"></i>занят</span>
+                    <span><i class="dot offline"></i>не на линии</span>
+                    <span><i class="dot order"></i>точка подачи</span>
                 </div>
             </div>
 
             <div class="table-wrap">
-                <h2>Последние заказы</h2>
+                <h2>Последние заказы <small>40 последних</small></h2>
                 <table>
                     <thead>
-                    <tr><th>№</th><th>Пассажир</th><th>Тариф</th><th>Км</th><th>Цена</th><th>Статус</th><th>Водитель</th><th></th></tr>
+                    <tr><th>№</th><th>Пассажир</th><th>Тариф</th><th class="num">Км</th><th class="num">Цена</th><th>Статус</th><th>Водитель</th><th></th></tr>
                     </thead>
                     <tbody id="orders"></tbody>
                 </table>
@@ -97,7 +97,7 @@
                     </select>
                 </label>
                 <div class="form-buttons">
-                    <button type="submit">Сохранить</button>
+                    <button type="submit" class="primary">Сохранить</button>
                     <button type="button" id="d-cancel">Очистить</button>
                 </div>
                 <div id="driver-error" class="error"></div>
