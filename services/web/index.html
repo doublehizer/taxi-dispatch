@@ -13,7 +13,6 @@
 <div id="login-screen" class="login-screen">
     <form id="login-form" class="login-box">
         <h1>Служба такси</h1>
-        <p>Вход в панель диспетчера</p>
         <label>Логин <input id="login-username" autocomplete="username" required></label>
         <label>Пароль <input id="login-password" type="password" autocomplete="current-password" required></label>
         <button type="submit" class="primary">Войти</button>
@@ -53,7 +52,7 @@
                 <div id="map"></div>
                 <div class="new-order">
                     <b>Новый заказ</b>
-                    <span id="hint">кликните на карте точку подачи</span>
+                    <span id="hint"></span>
                     <select id="tariff">
                         <option value="economy">Эконом</option>
                         <option value="comfort">Комфорт</option>
@@ -101,7 +100,6 @@
                     <button type="button" id="d-cancel">Очистить</button>
                 </div>
                 <div id="driver-error" class="error"></div>
-                <p class="note">Новый водитель появляется в центре города со статусом «свободен».</p>
             </form>
 
             <div class="panel table-wrap">

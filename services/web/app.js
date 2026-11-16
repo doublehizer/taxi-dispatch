@@ -159,7 +159,7 @@ const hint = document.getElementById("hint");
 function resetDraft() {
     draft = { pickup: null, dropoff: null };
     draftLayer.clearLayers();
-    hint.textContent = "кликните на карте точку подачи";
+    hint.textContent = "";
 }
 
 async function onMapClick(e) {

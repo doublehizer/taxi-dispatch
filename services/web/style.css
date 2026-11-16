@@ -367,7 +367,6 @@ input:focus, select:focus { outline: none; border-color: var(--text-3); }
 
 .login-box h1 { display: flex; align-items: center; gap: 12px; font-size: 18px; }
 
-.login-box p { margin: -8px 0 8px; color: var(--text-2); font-size: 14px; }
 
 /* ---------- Водители ---------- */
 
@@ -395,7 +394,6 @@ input:focus, select:focus { outline: none; border-color: var(--text-3); }
 .form-buttons { display: flex; gap: 8px; }
 .form-buttons button { flex: 1; height: 40px; }
 
-.note { margin: 0; font-size: 12px; color: var(--text-3); }
 
 tr.editing td { background: var(--surface-2); }
 tr.editing td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
